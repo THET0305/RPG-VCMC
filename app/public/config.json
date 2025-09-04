@@ -1,0 +1,13 @@
+{
+  "firebase": {
+    "apiKey": "AIzaSyArc5EwXmbkAT3F4vF8i09dOPg5NxH9l_M",
+    "authDomain": "rpg-vcac.firebaseapp.com",
+    "projectId": "rpg-vcac",
+    "databaseURL": "https://rpg-vcac-default-rtdb.firebaseio.com"
+  },
+  "livekit": {
+    "host": "wss://yourproject.livekit.cloud",
+    "tokenEndpoint": "https://<your-cloud-function-domain>/livekit-token"
+  },
+  "music": { "baseUrl": "https://cdn.example.com/music/" }
+}

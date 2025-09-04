@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    match /rooms/{roomId} {
+      // read room docs for everyone during dev (tighten later)
+      allow read: if true;
+
+      // Only a signed-in user can CREATE a room,
+      // and they must set createdBy to their own uid.
+      allow create: if isSignedIn()
+                    && request.resource.data.createdBy == request.auth.uid;
+
+      // Only the creator (GM) can update the room doc
+      allow update: if isSignedIn()
+                    && resource.data.createdBy == request.auth.uid;
+
+      // (Optional) allow delete only by creator
+      allow delete: if isSignedIn()
+                    && resource.data.createdBy == request.auth.uid;
+
+      // Members subcollection
+      match /members/{uid} {
+        // everyone can read members during dev (tighten later)
+        allow read: if true;
+
+        // A user may create/update ONLY their own member doc
+        allow create, update: if isSignedIn()
+                              && uid == request.auth.uid;
+
+        // (Optional) allow self-delete
+        allow delete: if isSignedIn()
+                      && uid == request.auth.uid;
+      }
+    }
+  }
+}

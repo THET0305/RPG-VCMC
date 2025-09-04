@@ -1,35 +1,59 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { useEffect, useState } from 'react'
 import './App.css'
+import { ensureFirebase } from './firebase'
+import RoomPanel from './features/rooms/room_panel'
 
-function App() {
-  const [count, setCount] = useState(0)
+type BootStatus = 'boot' | 'ready' | 'error'
 
+export default function App() {
+  const [status, setStatus] = useState<BootStatus>('boot')
+  const [err, setErr] = useState<string>('')
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        await ensureFirebase()
+        if (alive) setStatus('ready')
+      } catch (e: any) {
+        if (alive) {
+          setErr(e?.message || String(e))
+          setStatus('error')
+        }
+      }
+    })()
+    return () => { alive = false }
+  }, [])
+
+  if (status === 'boot') return <BootScreen />
+  if (status === 'error') return <ErrorScreen message={err} />
+
+  // status === 'ready'
   return (
     <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
+      <h1>My App</h1>
+      <RoomPanel />
     </>
   )
 }
 
-export default App
+function BootScreen() {
+  return (
+    <div style={{ padding: 16, fontFamily: 'system-ui' }}>
+      <h2>Loading…</h2>
+      <p>Initializing app and loading <code>config.json</code>.</p>
+    </div>
+  )
+}
+
+function ErrorScreen({ message }: { message: string }) {
+  return (
+    <div style={{ padding: 16, fontFamily: 'system-ui', color: '#a00' }}>
+      <h2>Startup error</h2>
+      <pre style={{ whiteSpace: 'pre-wrap' }}>{message}</pre>
+      <p>
+        Make sure <code>public/config.json</code> exists at the app root and is reachable.
+      </p>
+    </div>
+  )
+}
