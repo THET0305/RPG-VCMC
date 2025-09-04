@@ -12,3 +12,7 @@ None
 
 ### Tech Stack
 - Firebase: Database for session tracking, authenticaion, etc.
+- Firebase CLI: TBA
+- Node.js: TBA
+- VS Code:
+- Git: Version control.
