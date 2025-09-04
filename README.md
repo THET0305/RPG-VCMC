@@ -15,4 +15,6 @@ None
 - Firebase CLI: TBA
 - Node.js: TBA
 - VS Code:
-- Git: Version control.
+- Git: Version control
+- Vite: frontend development & development server.
+- TypeScript: Web scripting language.
