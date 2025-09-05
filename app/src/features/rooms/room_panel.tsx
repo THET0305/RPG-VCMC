@@ -10,6 +10,7 @@ import {
   getActiveRoom,
   startCamera,
   stopCamera,
+  preflightCameraPermission, // 👈 NEW
 } from '../livekit/join'
 
 type Member = { id: string; role: string; displayName: string }
@@ -97,6 +98,10 @@ export default function RoomPanel() {
     if (!roomId) { setAvError('Enter or create a room first'); return }
     setAvError(''); setAvStatus('joining')
     try {
+      // 1) Prompt camera **immediately on click** to guarantee the browser permission dialog
+      await preflightCameraPermission();
+
+      // 2) Join LiveKit (don’t publish video yet)
       const room = await joinLiveKit(
         roomId,
         {
@@ -105,15 +110,24 @@ export default function RoomPanel() {
           localVideo: localVideoRef.current || undefined,
         },
         {
-          publishVideo: true,      // start camera on join (set to false for audio-first)
+          publishVideo: false,     // we'll start camera right after join
           cameraFacingMode: 'user'
         }
-      )
-      ;(window as any).__room = room // debug handle
+      );
+      (window as any).__room = room; // debug handle
+
+      // 3) Unlock audio playback and **start the camera** (still in the same click chain)
       try { await room.startAudio() } catch {}
+      await startCamera({ facingMode: 'user' });
+
       setAvStatus('joined')
     } catch (e:any) {
-      setAvError(e?.message || 'Failed to join A/V')
+      // Give specific hint if the user blocked the camera
+      setAvError(
+        e?.name === 'NotAllowedError'
+          ? 'Camera permission blocked. Click the lock icon in the address bar → Site settings → Allow Camera.'
+          : (e?.message || 'Failed to join A/V')
+      )
       setAvStatus('idle')
     }
   }

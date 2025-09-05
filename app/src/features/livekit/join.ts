@@ -170,6 +170,17 @@ export async function joinLiveKit(
   return room;
 }
 
+export async function preflightCameraPermission(): Promise<void> {
+  // Must be called from a user gesture (e.g., button click)
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Camera not supported in this browser');
+  }
+  // Trigger the permission prompt ASAP
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  // We only needed the prompt; release the temp stream
+  for (const t of stream.getTracks()) t.stop();
+}
+
 /** Start (or restart) the local camera and publish it. Shows preview in mounted localVideoEl if provided. */
 export async function startCamera(params?: { facingMode?: "user" | "environment" }) {
   if (!currentRoom) throw new Error("Not connected");
