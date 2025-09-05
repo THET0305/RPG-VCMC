@@ -1,10 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoom, joinRoom } from './api'
 import {
   collection, onSnapshot, query, orderBy, getFirestore
 } from 'firebase/firestore'
 import { ensureFirebase } from '../../firebase'
-import { joinLiveKit, leaveLiveKit, getActiveRoom } from '../livekit/join'
+import {
+  joinLiveKit,
+  leaveLiveKit,
+  getActiveRoom,
+  startCamera,
+  stopCamera,
+} from '../livekit/join'
+
+type Member = { id: string; role: string; displayName: string }
 
 function randomRoomCode(len = 6) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O/1/I
@@ -14,31 +22,34 @@ function randomRoomCode(len = 6) {
 export default function RoomPanel() {
   const [roomId, setRoomId] = useState(localStorage.getItem('roomId') || '')
   const [displayName, setDisplayName] = useState(localStorage.getItem('displayName') || '')
-  const [members, setMembers] = useState<{id:string; role:string; displayName:string}[]>([])
+  const [members, setMembers] = useState<Member[]>([])
   const [status, setStatus] = useState<string>('')
 
-  // A/V state
-  const audioRef = useRef<HTMLDivElement>(null)
-  const [avStatus, setAvStatus] = useState<'idle' | 'joining' | 'joined'>('idle')
+  // A/V state + mounts
+  const audioRef = useRef<HTMLDivElement>(null)               // remote <audio> elements mount here
+  const remoteVideoRef = useRef<HTMLDivElement>(null)         // remote <video> elements grid
+  const localVideoRef = useRef<HTMLVideoElement>(null)        // local preview <video>
+  const [avStatus, setAvStatus] = useState<'idle'|'joining'|'joined'>('idle')
   const [avError, setAvError] = useState<string>('')
 
+  // Init Firebase (and sign-in anon inside join.ts when needed)
   useEffect(() => {
-    // Ensure Firebase initialized & user signed in
     ensureFirebase().catch((e) => setStatus(`Init error: ${String(e)}`))
   }, [])
 
-  // Live members list when roomId is set
+  // Live members list when roomId is present
   useEffect(() => {
     if (!roomId) { setMembers([]); return }
     const db = getFirestore()
     const q = query(collection(db, 'rooms', roomId, 'members'), orderBy('displayName'))
     const unsub = onSnapshot(q, (snap) => {
-      const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+      const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Member[]
       setMembers(rows)
     }, (err) => setStatus(`Members error: ${err.message}`))
     return () => unsub()
   }, [roomId])
 
+  // ----- Room create/join/leave (Firestore presence) -----
   async function handleCreate() {
     const code = roomId || randomRoomCode()
     try {
@@ -66,27 +77,38 @@ export default function RoomPanel() {
     }
   }
 
-  function handleLeave() {
-    // simple client-side leave (clear local state)
+  async function handleLeave() {
+    // Leave LiveKit if connected
+    if (getActiveRoom()) {
+      try { await leaveLiveKit() } catch {}
+      setAvStatus('idle'); setAvError('')
+    }
+    // Simple client-side room leave (presence rules may clean server-side)
     localStorage.removeItem('roomId')
     setRoomId('')
     setMembers([])
     setStatus('Left room (client-only)')
-    // also ensure A/V is left if active
-    if (getActiveRoom()) {
-      leaveLiveKit().catch(() => {})
-      setAvStatus('idle')
-      setAvError('')
-    }
   }
 
-  // --- A/V handlers ---
+  // ----- A/V controls -----
+  const avConnected = !!getActiveRoom()
+
   async function handleJoinAV() {
     if (!roomId) { setAvError('Enter or create a room first'); return }
-    setAvError('')
-    setAvStatus('joining')
+    setAvError(''); setAvStatus('joining')
     try {
-      const room = await joinLiveKit(roomId, audioRef.current || undefined)
+      const room = await joinLiveKit(
+        roomId,
+        {
+          audioContainer: audioRef.current || undefined,
+          remoteVideoContainer: remoteVideoRef.current || undefined,
+          localVideo: localVideoRef.current || undefined,
+        },
+        {
+          publishVideo: true,      // start camera on join (set to false for audio-first)
+          cameraFacingMode: 'user'
+        }
+      )
       ;(window as any).__room = room // debug handle
       try { await room.startAudio() } catch {}
       setAvStatus('joined')
@@ -97,15 +119,20 @@ export default function RoomPanel() {
   }
 
   async function handleLeaveAV() {
-    try {
-      await leaveLiveKit()
-    } finally {
-      setAvStatus('idle')
-      setAvError('')
+    try { await leaveLiveKit() } finally {
+      setAvStatus('idle'); setAvError('')
     }
   }
 
-  const avConnected = !!getActiveRoom()
+  async function handleStartCam() {
+    try { await startCamera({ facingMode: 'user' }) }
+    catch (e:any) { setAvError(e?.message || 'Failed to start camera') }
+  }
+
+  async function handleStopCam() {
+    try { await stopCamera() }
+    catch (e:any) { setAvError(e?.message || 'Failed to stop camera') }
+  }
 
   return (
     <div className="card" style={{ maxWidth: 720, margin: '1rem auto', textAlign: 'left' }}>
@@ -159,22 +186,52 @@ export default function RoomPanel() {
         <em>Status:</em> {status || 'Ready'}
       </p>
 
-      {/* A/V controls appear once a room code exists (created or provided) */}
+      {/* A/V controls appear when a room code exists */}
       {roomId && (
         <div style={{ marginTop: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
           <h3>A/V</h3>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {!avConnected ? (
               <button onClick={handleJoinAV} disabled={avStatus === 'joining'}>
                 {avStatus === 'joining' ? 'Joining A/V…' : 'Join A/V'}
               </button>
             ) : (
-              <button onClick={handleLeaveAV}>Leave A/V</button>
+              <>
+                <button onClick={handleLeaveAV}>Leave A/V</button>
+                <button onClick={handleStartCam}>Start Camera</button>
+                <button onClick={handleStopCam}>Stop Camera</button>
+              </>
             )}
-            {avError && <span style={{ color: 'crimson' }}>⚠️ {avError}</span>}
             {avConnected && <span>✅ Connected</span>}
+            {avError && <span style={{ color: 'crimson' }}>⚠️ {avError}</span>}
           </div>
-          {/* Remote <audio> elements get appended here by joinLiveKit */}
+
+          {/* Local preview */}
+          <div style={{ marginTop: 12 }}>
+            <h4 style={{ margin: '8px 0' }}>Your Camera</h4>
+            <video
+              ref={localVideoRef}
+              muted
+              autoPlay
+              playsInline
+              style={{ width: '100%', maxHeight: 240, background: '#000', borderRadius: 8 }}
+            />
+          </div>
+
+          {/* Remote videos grid */}
+          <div style={{ marginTop: 12 }}>
+            <h4 style={{ margin: '8px 0' }}>Remote Participants</h4>
+            <div
+              ref={remoteVideoRef}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                gap: 8
+              }}
+            />
+          </div>
+
+          {/* Remote <audio> elements (invisible) */}
           <div ref={audioRef} />
         </div>
       )}
