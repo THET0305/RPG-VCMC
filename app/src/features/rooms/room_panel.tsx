@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoom, joinRoom } from './api'
 import {
   collection, onSnapshot, query, orderBy, getFirestore
 } from 'firebase/firestore'
 import { ensureFirebase } from '../../firebase'
-import { fetchLiveKitToken } from '../livekit/join'
+import { joinLiveKit, leaveLiveKit, getActiveRoom } from '../livekit/join'
 
 function randomRoomCode(len = 6) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O/1/I
@@ -16,6 +16,11 @@ export default function RoomPanel() {
   const [displayName, setDisplayName] = useState(localStorage.getItem('displayName') || '')
   const [members, setMembers] = useState<{id:string; role:string; displayName:string}[]>([])
   const [status, setStatus] = useState<string>('')
+
+  // A/V state
+  const audioRef = useRef<HTMLDivElement>(null)
+  const [avStatus, setAvStatus] = useState<'idle' | 'joining' | 'joined'>('idle')
+  const [avError, setAvError] = useState<string>('')
 
   useEffect(() => {
     // Ensure Firebase initialized & user signed in
@@ -67,7 +72,40 @@ export default function RoomPanel() {
     setRoomId('')
     setMembers([])
     setStatus('Left room (client-only)')
+    // also ensure A/V is left if active
+    if (getActiveRoom()) {
+      leaveLiveKit().catch(() => {})
+      setAvStatus('idle')
+      setAvError('')
+    }
   }
+
+  // --- A/V handlers ---
+  async function handleJoinAV() {
+    if (!roomId) { setAvError('Enter or create a room first'); return }
+    setAvError('')
+    setAvStatus('joining')
+    try {
+      const room = await joinLiveKit(roomId, audioRef.current || undefined)
+      ;(window as any).__room = room // debug handle
+      try { await room.startAudio() } catch {}
+      setAvStatus('joined')
+    } catch (e:any) {
+      setAvError(e?.message || 'Failed to join A/V')
+      setAvStatus('idle')
+    }
+  }
+
+  async function handleLeaveAV() {
+    try {
+      await leaveLiveKit()
+    } finally {
+      setAvStatus('idle')
+      setAvError('')
+    }
+  }
+
+  const avConnected = !!getActiveRoom()
 
   return (
     <div className="card" style={{ maxWidth: 720, margin: '1rem auto', textAlign: 'left' }}>
@@ -113,7 +151,6 @@ export default function RoomPanel() {
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button onClick={handleJoin}>Join room</button>
             <button onClick={handleLeave} type="button">Leave</button>
-            <button onClick={() => fetchLiveKitToken(roomId)}>Join A/V</button>
           </div>
         </div>
       </div>
@@ -121,6 +158,26 @@ export default function RoomPanel() {
       <p style={{ marginTop: 12, minHeight: 24 }}>
         <em>Status:</em> {status || 'Ready'}
       </p>
+
+      {/* A/V controls appear once a room code exists (created or provided) */}
+      {roomId && (
+        <div style={{ marginTop: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
+          <h3>A/V</h3>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {!avConnected ? (
+              <button onClick={handleJoinAV} disabled={avStatus === 'joining'}>
+                {avStatus === 'joining' ? 'Joining A/V…' : 'Join A/V'}
+              </button>
+            ) : (
+              <button onClick={handleLeaveAV}>Leave A/V</button>
+            )}
+            {avError && <span style={{ color: 'crimson' }}>⚠️ {avError}</span>}
+            {avConnected && <span>✅ Connected</span>}
+          </div>
+          {/* Remote <audio> elements get appended here by joinLiveKit */}
+          <div ref={audioRef} />
+        </div>
+      )}
 
       {roomId && (
         <>
