@@ -4,6 +4,7 @@ import {
   collection, onSnapshot, query, orderBy, getFirestore
 } from 'firebase/firestore'
 import { ensureFirebase } from '../../firebase'
+import { fetchLiveKitToken } from '../livekit/join'
 
 function randomRoomCode(len = 6) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O/1/I
@@ -112,6 +113,7 @@ export default function RoomPanel() {
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button onClick={handleJoin}>Join room</button>
             <button onClick={handleLeave} type="button">Leave</button>
+            <button onClick={() => fetchLiveKitToken(roomId)}>Join A/V</button>
           </div>
         </div>
       </div>

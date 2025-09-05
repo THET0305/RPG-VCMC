@@ -1,6 +1,22 @@
 {
   "rules": {
     ".read": false,
-    ".write": false
+    ".write": false,
+    "rooms": {
+      "$roomId": {
+        "control": {
+          ".read": "auth != null && root.child('members/'+$roomId+'/'+auth.uid).exists()",
+          ".write": "auth != null && root.child('members/'+$roomId+'/'+auth.uid+'/role').val() === 'gm'"
+        }
+      }
+    },
+    "members": {
+      "$roomId": {
+        "$uid": {
+          ".read": "auth != null && $uid === auth.uid",
+          ".write": "auth != null && $uid === auth.uid"
+        }
+      }
+    }
   }
 }

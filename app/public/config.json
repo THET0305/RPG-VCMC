@@ -6,8 +6,8 @@
     "databaseURL": "https://rpg-vcac-default-rtdb.firebaseio.com"
   },
   "livekit": {
-    "host": "wss://yourproject.livekit.cloud",
-    "tokenEndpoint": "https://<your-cloud-function-domain>/livekit-token"
+    "host": "wss://rpg-vcac-qbjmamwj.livekit.cloud",
+    "tokenEndpoint": "https://livekittoken-k7plarh75a-uc.a.run.app"
   },
   "music": { "baseUrl": "https://cdn.example.com/music/" }
 }
